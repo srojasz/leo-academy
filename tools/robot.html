@@ -1,0 +1,71 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../css/style.css"></head>
+<body>
+<div id="app"></div>
+<pre id="log"></pre>
+<script>window.__errs = []; window.onerror = (m, s, l) => { __errs.push(m + ' @' + s + ':' + l); };</script>
+<script src="../js/core.js"></script>
+<script src="../js/glossary.js"></script>
+<script src="../js/games.js"></script>
+<script src="../subjects/subjects.js"></script>
+<!-- UNITS -->
+<script src="../js/app.js"></script>
+<script>
+/* Robot de pruebas: juega todos los juegos de todas las jornadas pulsando botones al azar
+   y comprueba que cada juego llega al final sin errores. Lo lanza tools/test.sh */
+Speech.supported = false;
+Speech.sequence = () => Promise.resolve(true);
+window.confirm = () => true;
+const out = [];
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function playGame(g) {
+  const root = document.createElement('div');
+  document.body.append(root);
+  let scores = 0, finished = false;
+  const ctx = { score() { scores++; }, finish() { finished = true; } };
+  if (!GAMES[g.type]) return 'ERR tipo de juego desconocido: ' + g.type;
+  try { GAMES[g.type](root, g, ctx); } catch (e) { return 'ERR al empezar: ' + e.message; }
+  for (let k = 0; k < 600 && !finished; k++) {
+    const q = s => [...root.querySelectorAll(s)].filter(b => !b.disabled && !b.classList.contains('done'));
+    try {
+      const next = q('.feedback .btn.primary')[0] || q('.card .btn.primary.big')[0];
+      if (next) { next.click(); await sleep(5); continue; }
+      if (g.type === 'match') {
+        const l = q('.tile.en')[0], rs = q('.tile.es');
+        if (l && rs.length) { l.click(); rs[Math.floor(Math.random() * rs.length)].click(); }
+        await sleep(5); continue;
+      }
+      const chk = root.querySelector('.btn.primary:not(:disabled)');
+      const inp = root.querySelector('.type-input:not(:disabled)');
+      if (inp && chk) { inp.value = 'xx'; chk.click(); await sleep(5); continue; }
+      const t = q('.opt')[0] || q('.bucket')[0] || q('.letter')[0] || q('.chip-pool .chip')[0];
+      if (t) { t.click(); await sleep(5); continue; }
+      if (chk) { chk.click(); await sleep(5); continue; }
+      await sleep(100); // p. ej. avance automático tras acertar
+    } catch (e) { return 'ERR jugando: ' + e.message; }
+  }
+  root.remove();
+  return finished ? 'ok (' + scores + ' puntos)' : 'ERR no llega al final (' + scores + ' puntos)';
+}
+
+(async () => {
+  for (const u of UNITS) {
+    const key = u.subject + '-' + u.id;
+    Speech.setLang(subjectOf(u).lang);
+    for (const [di, d] of u.days.entries()) {
+      for (const g of d.games) out.push(`${key} J${di + 1} [${g.type}] ${g.title}: ${await playGame(g)}`);
+    }
+    for (const hsh of ['#/u/' + key, '#/u/' + key + '/charla', '#/u/' + key + '/day/1', '#/u/' + key + '/day/free']) {
+      history.replaceState(null, '', hsh); route(); await sleep(20);
+      const len = document.getElementById('app').innerText.length;
+      out.push(`${hsh}: ${len > 50 ? 'ok' : 'ERR pantalla vacía'}`);
+    }
+  }
+  for (const s of SUBJECTS) { history.replaceState(null, '', '#/s/' + s.id); route(); await sleep(10); }
+  history.replaceState(null, '', '#/album'); route();
+  out.push('ERRORES JS: ' + (__errs.length ? 'ERR ' + JSON.stringify(__errs) : 'ninguno'));
+  document.getElementById('log').textContent = out.join('\n');
+})();
+</script>
+</body></html>
